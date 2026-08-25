@@ -7,7 +7,7 @@
 - **Based:** Arlington, VA (serving DMV area)
 - **Expanding to:** Dallas/Ft. Worth, Texas
 - **Phone:** 202-798-0610
-- **WhatsApp:** +50661500559
+- **WhatsApp:** +12027980610
 - **Email:** bookings@partyfavorphoto.com (live via Resend)
 - **Website:** partyfavorphoto.com (React/Vite via Lovable.dev)
 - **Booking system:** tave.com/party-favor-photo
@@ -65,8 +65,8 @@ Colorado | Texas (expanding) | Florida
 - **Send:** bookings@partyfavorphoto.com via Resend edge function
 - **Receive:** All @partyfavorphoto.com via Resend inbound + webhook to relay
 - **Forwarding:** pfpattendants@gmail.com → bookings@partyfavorphoto.com (verified)
-- **API Key:** re_K1p8eaKu_2kQwBZyqcBGPPxvtkc43Xous
-- **Webhook secret:** whsec_1sdJm4hh1MbXX5wzifJLDMVsMlGM0gGc
+- **API Key:** re_... (redacted — not committed to public repo)
+- **Webhook secret:** whsec_... (redacted)
 
 ## Campaign Status
 - **Daily cron:** 50 emails/day at 8:00 AM via Windows Task Scheduler

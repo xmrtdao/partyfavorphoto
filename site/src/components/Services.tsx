@@ -135,7 +135,7 @@ const Services = () => {
                 {/* CTA Button */}
                 <Button 
                   className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
-                  onClick={() => window.open('https://wa.me/50661500559?text=Hi!%20Please%20send%20me%20more%20information%20about%20' + encodeURIComponent(service.title), '_blank')}
+                  onClick={() => window.open('https://wa.me/12027980610?text=Hi!%20Please%20send%20me%20more%20information%20about%20' + encodeURIComponent(service.title), '_blank')}
                 >
                   {t('services.bookNow')}
                 </Button>
