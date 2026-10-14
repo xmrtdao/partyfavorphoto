@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,10 +19,56 @@ import {
   Star,
   Zap,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  CalendarCheck
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import EventDatePicker from "@/components/EventDatePicker";
+
+/**
+ * The self-serve booking funnel.
+ *
+ * One constant, so the site can never drift into sending half its traffic to
+ * the old manual path and half to the new one. Everything below — the calendar,
+ * the availability fetch, the hand-off — resolves through this.
+ */
+const BOOKING_FUNNEL_URL = 'https://book.partyfavorphoto.com';
+
+/**
+ * Is the self-serve funnel actually up?
+ *
+ * WHY THIS IS PROBED RATHER THAN ASSUMED
+ * --------------------------------------
+ * The funnel's public hostname depends on a Cloudflare tunnel whose ingress is
+ * configured in a dashboard, not in the repo. So the code can be deployed, the
+ * CTA can be live, and the destination can still be a hard 404 — which is
+ * exactly the state right now.
+ *
+ * Shipping a primary "Check availability & book" button that leads to a 404
+ * would be a REGRESSION: it would replace a booking path that works (the manual
+ * one below) with one that does not, and nobody would notice until a client
+ * told them. So the button is offered only when the funnel answers.
+ *
+ * When the tunnel hostname is added, this flips on its own with no redeploy.
+ *
+ * The booking API sends Access-Control-Allow-Origin: *, so this probe works from
+ * the site's own origin. It is null until it settles, and the manual path is the
+ * primary in the meantime rather than a spinner.
+ */
+function useFunnelLive(): boolean | null {
+  const [live, setLive] = useState<boolean | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 4000);
+    fetch(`${BOOKING_FUNNEL_URL}/api/pfp-book/config`, { signal: ac.signal })
+      .then((r) => setLive(r.ok))
+      .catch(() => setLive(false))
+      .finally(() => clearTimeout(timer));
+    return () => { ac.abort(); clearTimeout(timer); };
+  }, []);
+  return live;
+}
 
 interface CartItem {
   id: string;
@@ -38,6 +84,7 @@ const BookingCart = () => {
   const { t } = useTranslation();
   const { cartItems, addToCart, removeFromCart, updateQuantity, clearCart, getTotalItems, getTotalPrice } = useCart();
   const [date, setDate] = useState<Date>();
+  const funnelLive = useFunnelLive();
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -122,6 +169,35 @@ const BookingCart = () => {
       title: t('cart.cartCleared'),
       description: t('cart.allItemsRemoved'),
     });
+  };
+
+  /**
+   * Hand the visitor to the self-serve funnel at book.partyfavorphoto.com.
+   *
+   * Everything already chosen here travels along in the query string, so the
+   * funnel opens with the date and package filled in rather than making someone
+   * re-enter what they just typed.
+   *
+   * No total is passed across, on purpose. The funnel re-prices from its own
+   * catalogue, which is the same one the contract and the Stripe charge are
+   * built from. A price displayed on one page and charged on another is how a
+   * customer ends up arguing with an invoice.
+   */
+  const openBookingFunnel = () => {
+    if (!date || cartItems.length === 0) return;
+
+    const premium = cartItems.some((i: any) => /premium|4x6|4×6/i.test(i.name || ''));
+    const hoursMatch = cartItems
+      .map((i: any) => String(i.name || '').match(/(\d)\s*(?:hr|hour)/i))
+      .find(Boolean);
+    const hours = hoursMatch ? hoursMatch[1] : null;
+
+    const params = new URLSearchParams();
+    if (date) params.set('date', date);
+    if (hours) params.set('hours', String(hours));
+    params.set('rate', premium ? 'premium' : 'standard');
+
+    window.location.href = BOOKING_FUNNEL_URL + '/?' + params.toString();
   };
 
   const sendWhatsAppOrder = async () => {
@@ -211,31 +287,31 @@ const BookingCart = () => {
                 <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                 {t('cart.selectDate')}
               </h3>
-              <div className="relative">
-                <Input
-                  type="date"
-                  value={date ? format(date, 'yyyy-MM-dd') : ''}
-                  onChange={(e) => {
-                    const newDate = e.target.value ? new Date(e.target.value + 'T12:00:00') : undefined;
-                    setDate(newDate);
-                    if (newDate) {
-                      toast({
-                        title: t('cart.dateSelected'),
-                        description: format(newDate, "EEEE, MMMM do, yyyy"),
-                      });
-                    }
-                  }}
-                  min={format(new Date(), 'yyyy-MM-dd')}
-                  className="w-full h-10 sm:h-11 cursor-pointer hover:bg-accent/50 transition-colors pl-8 sm:pl-10 text-sm sm:text-base"
-                  placeholder="Choose your event date"
-                />
-                <CalendarIcon className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground pointer-events-none" />
-              </div>
-              {date && (
-                <p className="text-xs sm:text-sm text-muted-foreground bg-muted/30 rounded-md p-2">
-                  Selected: {format(date, "EEEE, MMMM do, yyyy")}
-                </p>
-              )}
+              {/* A real calendar with live availability, not <input type="date">.
+                  The native widget cannot be styled to match the brand, renders
+                  differently on every phone, and — the part that matters — cannot
+                  show that a date has all four StudioStations already committed.
+                  That knowledge has to surface here, before anyone fills in a
+                  form, not three steps later.
+
+                  The availability fetch degrades: if the booking service is
+                  unreachable the calendar still picks dates and says so. */}
+              <EventDatePicker
+                value={date ? format(date, 'yyyy-MM-dd') : null}
+                onChange={(iso) => {
+                  if (!iso) { setDate(undefined); return; }
+                  // Noon, not midnight: a date parsed at 00:00 renders as the
+                  // PREVIOUS day in any timezone west of UTC, which is how an
+                  // event date silently becomes the night before.
+                  const d = new Date(iso + 'T12:00:00');
+                  setDate(d);
+                  toast({
+                    title: t('cart.dateSelected'),
+                    description: format(d, "EEEE, MMMM do, yyyy"),
+                  });
+                }}
+                availabilityUrl={BOOKING_FUNNEL_URL + '/api/pfp-book'}
+              />
             </div>
 
             <Separator />
@@ -442,6 +518,20 @@ const BookingCart = () => {
                       </div>
                     </div>
                     
+                    {/* PRIMARY PATH: the self-serve funnel — offered only once we
+                        know it answers. See useFunnelLive() for why that matters
+                        and why this is not simply always-on. */}
+                    {funnelLive === true && (
+                      <Button
+                        onClick={openBookingFunnel}
+                        className="w-full bg-primary hover:bg-primary-elegant text-primary-foreground font-semibold py-2 sm:py-3 h-10 sm:h-11 smooth-transition hover:scale-[1.02] text-sm sm:text-base"
+                        disabled={!date || cartItems.length === 0}
+                      >
+                        <CalendarCheck className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+                        Check availability &amp; book
+                      </Button>
+                    )}
+
                     <Button
                       onClick={sendWhatsAppOrder}
                       className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 sm:py-3 h-10 sm:h-11 smooth-transition hover:scale-[1.02] text-sm sm:text-base"
