@@ -26,16 +26,31 @@ const FFMPEG = process.env.PFP_FFMPEG || 'C:\\tools\\ffmpeg.exe';
 
 fs.mkdirSync(OUT, { recursive: true });
 
+// A few curtains need a CROP, because the whole picture is not what the
+// client is choosing.
+//
+// The gold curtain hangs from a bright header band and pools on the floor.
+// Scaled whole, that band is most of what is left in a 44-pixel tile, and
+// what it says is "a bright stripe" rather than "the gold sequin curtain".
+// The middle of it - the dense field of sequins - is the curtain.
+const CROPS = {
+  'gold-sequin': 'crop=iw:ih*0.78:0:ih*0.10',
+};
+
 const curtains = fs.readdirSync(DIR).filter((f) => /\.png$/i.test(f)).sort();
 let made = 0;
 for (const f of curtains) {
   const slug = f.replace(/\.png$/i, '');
   const out = path.join(OUT, `${slug}.jpg`);
+  const crop = CROPS[slug];
+  const filter = crop
+    ? `${crop},scale=240:-1`
+    : 'scale=240:-1';
   try {
     await run(FFMPEG, ['-y', '-loglevel', 'error', '-i', path.join(DIR, f),
-      '-vf', 'scale=240:-1', '-q:v', '6', out]);
+      '-vf', filter, '-q:v', '6', out]);
     const kb = Math.round(fs.statSync(out).size / 1024);
-    console.log(`${slug.padEnd(30)} ${kb} KB`);
+    console.log(`${slug.padEnd(30)} ${String(kb).padStart(3)} KB${crop ? '  (cropped)' : ''}`);
     made++;
   } catch (e) {
     console.log(`${slug.padEnd(30)} FAILED: ${String(e.message).slice(0, 90)}`);
